@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+//////////////////////////
+// 👤 USER MODULE
+//////////////////////////
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String?  @unique
+  email     String?  @unique
+  gender    String?
+  createdAt DateTime @default(now())
+
+  sizes    UserSize?
+  images   UserImage[]
+  sessions Session[]
+  carts    Cart[]
+}
+
+model UserSize {
+  id         String  @id @default(uuid())
+  userId     String  @unique
+  topSize    String?
+  bottomSize String?
+  shoeSize   String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model UserImage {
+  id        String    @id @default(uuid())
+  userId    String
+  imageUrl  String
+  type      ImageType
+  createdAt DateTime  @default(now())
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tryOns TryOnRequest[]
+}
+
+enum ImageType {
+  FACE
+  FULL_BODY
+}
+
+//////////////////////////
+// 🏬 STORE MODULE
+//////////////////////////
+
+model Store {
+  id       String  @id @default(uuid())
+  name     String
+  location String?
+
+  screens  Screen[]
+  stock    InventoryStock[]
+  sessions Session[]
+}
+
+model Screen {
+  id      String @id @default(uuid())
+  name    String
+  storeId String
+
+  store    Store     @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  sessions Session[]
+}
+
+//////////////////////////
+// 🔗 SESSION MODULE (QR FLOW)
+//////////////////////////
+
+model Session {
+  id        String        @id @default(uuid())
+  userId    String
+  storeId   String
+  screenId  String
+  status    SessionStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  expiresAt DateTime?
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store  Store  @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  screen Screen @relation(fields: [screenId], references: [id], onDelete: Cascade)
+
+  tryons TryOnRequest[]
+  cart   Cart?
+}
+
+enum SessionStatus {
+  ACTIVE
+  COMPLETED
+  EXPIRED
+}
+
+//////////////////////////
+// 🧵 INVENTORY MODULE
+//////////////////////////
+
+model Inventory {
+  id            String   @id @default(uuid())
+  skuCode       String   @unique
+  brand         String?
+  name          String
+  material      String?
+  categoryId    String?
+  subCategoryId String?
+  price         Float
+  premium       Boolean  @default(false)
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  subCategory SubCategory? @relation(fields: [subCategoryId], references: [id])
+
+  variants ProductVariant[]
+  images   ProductImage[]
+}
+
+model Category {
+  id   String @id @default(uuid())
+  name String @unique
+
+  products Inventory[]
+  subCats  SubCategory[]
+}
+
+model SubCategory {
+  id         String @id @default(uuid())
+  name       String
+  categoryId String
+
+  category Category    @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  products Inventory[]
+}
+
+model ProductVariant {
+  id             String  @id @default(uuid())
+  inventoryId    String
+  size           String?
+  color          String?
+  skuVariantCode String? @unique
+  priceOverride  Float?
+
+  inventory  Inventory        @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  stock      InventoryStock[]
+  tryonItems TryOnItem[]
+  cartItems  CartItem[]
+}
+
+model InventoryStock {
+  id        String @id @default(uuid())
+  variantId String
+  storeId   String
+  quantity  Int    @default(0)
+
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  store   Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([variantId, storeId]) // prevent duplicate stock rows
+}
+
+model ProductImage {
+  id          String  @id @default(uuid())
+  inventoryId String
+  imageUrl    String
+  isPrimary   Boolean @default(false)
+
+  inventory Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+}
+
+//////////////////////////
+// 🤖 AI TRY-ON MODULE
+//////////////////////////
+
+model TryOnRequest {
+  id          String      @id @default(uuid())
+  sessionId   String
+  userImageId String
+  status      TryOnStatus @default(PENDING)
+  createdAt   DateTime    @default(now())
+
+  session   Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userImage UserImage @relation(fields: [userImageId], references: [id], onDelete: Cascade)
+
+  items   TryOnItem[]
+  results AIResult[]
+}
+
+model TryOnItem {
+  id             String @id @default(uuid())
+  tryOnRequestId String
+  variantId      String
+
+  tryOnRequest TryOnRequest   @relation(fields: [tryOnRequestId], references: [id], onDelete: Cascade)
+  variant      ProductVariant @relation(fields: [variantId], references: [id])
+}
+
+model AIResult {
+  id             String   @id @default(uuid())
+  tryOnRequestId String
+  imageUrl       String
+  modelType      String?
+  createdAt      DateTime @default(now())
+
+  tryOnRequest TryOnRequest @relation(fields: [tryOnRequestId], references: [id], onDelete: Cascade)
+}
+
+enum TryOnStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+//////////////////////////
+// 🛒 CART MODULE
+//////////////////////////
+
+model Cart {
+  id        String @id @default(uuid())
+  userId    String
+  sessionId String @unique
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  items CartItem[]
+}
+
+model CartItem {
+  id        String @id @default(uuid())
+  cartId    String
+  variantId String
+  quantity  Int    @default(1)
+
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([cartId, variantId]) // prevent duplicate items
+}
